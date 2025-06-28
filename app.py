@@ -4,33 +4,17 @@ from gtts import gTTS
 from fpdf import FPDF
 import os
 
-# Streamlit page config
+# Load Excel
+@st.cache_data
+def load_data():
+    file_path = "/mnt/data/a5f9c644-a334-4ff7-af88-a17fb63922ba.xlsx"
+    return pd.read_excel(file_path)
+
+df = load_data()
+
+# App UI
 st.set_page_config(page_title="Medical Report Generator", layout="centered")
 st.title("🩺 Medical Report Generator with Audio and PDF")
-
-# Define file names
-excel_files = [
-    "Antibiotic_Tablets_Dataset (4).xlsx",
-    "Anti_Diabetic_Drugs.xlsx",
-    "Anti_Hypertensive_Drugs_Dataset_Full.xlsx",
-    "Anti_neoplastic_Drugs_Dataset_Complete.xlsx",
-    "Anti_Tubercular_Agents (1).xlsx",
-]
-
-# Load and combine all Excel files
-@st.cache_data
-def load_combined_data():
-    dfs = []
-    for file in excel_files:
-        if os.path.exists(file):
-            df = pd.read_excel(file)
-            dfs.append(df)
-    if dfs:
-        return pd.concat(dfs, ignore_index=True)
-    else:
-        return pd.DataFrame()
-
-df = load_combined_data()
 
 # Input fields
 name = st.text_input("Patient Name")
@@ -48,7 +32,7 @@ lang_code_map = {
 def generate_detailed_report(name, age, mobile, query, df):
     filtered = df[df.apply(lambda row: row.astype(str).str.contains(query, case=False, na=False).any(), axis=1)]
     if filtered.empty:
-        return None
+        return None, "No relevant data found."
 
     record = filtered.iloc[0]
     disease = record.get('Disease', 'an unspecified condition')
@@ -57,11 +41,16 @@ def generate_detailed_report(name, age, mobile, query, df):
     diet = record.get('Diet Advice', 'a general healthy diet')
 
     para1 = f"Patient Name: {name}, Age: {age}, Mobile: {mobile}."
-    para2 = f"The patient has been diagnosed with {disease}. This condition may present symptoms requiring close observation and treatment."
-    para3 = f"It is recommended to consult a doctor who specializes in {doctor_type}. The prescribed medication for this condition is {medicine}. Ensure to follow the dosage and frequency advised by your doctor."
-    para4 = f"Dietary recommendations for this condition include: {diet}. Maintaining a balanced diet, avoiding allergens, and staying hydrated are key to recovery."
+    para2 = f"The patient appears to be diagnosed with {disease}. This condition requires appropriate medical attention."
+    para3 = f"A consultation with a specialist in {doctor_type} is recommended. Suggested medicine: {medicine}."
+    para4 = f"Dietary advice: {diet}. Regular exercise and lifestyle adjustments are encouraged."
 
-    return "\n\n".join([para1, para2, para3, para4])
+    full_report = "\n\n".join([para1, para2, para3, para4])
+    
+    # Choose what to read aloud
+    tts_text = f"Disease: {disease}. Medicine: {medicine}."
+
+    return full_report, tts_text
 
 # PDF Generation
 def generate_pdf(report_text, filename="medical_report.pdf"):
@@ -77,27 +66,25 @@ def generate_audio(text, lang_code, filename="audio.mp3"):
     tts = gTTS(text=text, lang=lang_code)
     tts.save(filename)
 
-# Main button logic
 if st.button("Generate Report"):
     if name and mobile and query:
-        report = generate_detailed_report(name, age, mobile, query, df)
+        report, tts_text = generate_detailed_report(name, age, mobile, query, df)
+
         if report:
             st.markdown("## 📝 Medical Report")
             st.markdown(report)
 
-            # PDF generation
+            # Generate and offer PDF download
             pdf_filename = "medical_report.pdf"
             generate_pdf(report, pdf_filename)
             with open(pdf_filename, "rb") as f:
                 st.download_button("📥 Download PDF", f, file_name=pdf_filename)
 
-            # TTS summary
-            summary = report.split('\n\n')[0]  # First paragraph
+            # Generate and play TTS (disease + medicine only)
             audio_filename = "audio.mp3"
-            generate_audio(summary, lang_code_map[language], audio_filename)
+            generate_audio(tts_text, lang_code_map[language], audio_filename)
             st.audio(audio_filename)
-
         else:
-            st.warning("No relevant data found for the query.")
+            st.warning(tts_text)  # "No relevant data found."
     else:
         st.warning("Please fill all fields.")
