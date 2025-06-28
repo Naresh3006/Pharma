@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 from gtts import gTTS
 from fpdf import FPDF
-import os
 
 # Load Excel
 @st.cache_data
@@ -32,7 +31,7 @@ lang_code_map = {
 def generate_detailed_report(name, age, mobile, query, df):
     filtered = df[df.apply(lambda row: row.astype(str).str.contains(query, case=False, na=False).any(), axis=1)]
     if filtered.empty:
-        return None, "No relevant data found."
+        return None, None, "No relevant data found."
 
     record = filtered.iloc[0]
     disease = record.get('Disease', 'an unspecified condition')
@@ -47,10 +46,10 @@ def generate_detailed_report(name, age, mobile, query, df):
 
     full_report = "\n\n".join([para1, para2, para3, para4])
     
-    # Choose what to read aloud
-    tts_text = f"Disease: {disease}. Medicine: {medicine}."
+    # TTS should ONLY say disease and medicine
+    tts_text = f"{disease}. மருந்து: {medicine}." if lang_code_map[language] == "ta" else f"{disease}. दवा: {medicine}."
 
-    return full_report, tts_text
+    return full_report, tts_text, None
 
 # PDF Generation
 def generate_pdf(report_text, filename="medical_report.pdf"):
@@ -68,23 +67,23 @@ def generate_audio(text, lang_code, filename="audio.mp3"):
 
 if st.button("Generate Report"):
     if name and mobile and query:
-        report, tts_text = generate_detailed_report(name, age, mobile, query, df)
+        report, tts_text, error = generate_detailed_report(name, age, mobile, query, df)
 
-        if report:
+        if error:
+            st.warning(error)
+        else:
             st.markdown("## 📝 Medical Report")
             st.markdown(report)
 
-            # Generate and offer PDF download
+            # PDF
             pdf_filename = "medical_report.pdf"
             generate_pdf(report, pdf_filename)
             with open(pdf_filename, "rb") as f:
                 st.download_button("📥 Download PDF", f, file_name=pdf_filename)
 
-            # Generate and play TTS (disease + medicine only)
+            # TTS — use disease/medicine only
             audio_filename = "audio.mp3"
             generate_audio(tts_text, lang_code_map[language], audio_filename)
             st.audio(audio_filename)
-        else:
-            st.warning(tts_text)  # "No relevant data found."
     else:
         st.warning("Please fill all fields.")
