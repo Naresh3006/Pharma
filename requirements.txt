@@ -1,0 +1,6 @@
+streamlit
+pandas
+openpyxl
+gtts
+reportlab
+google-generativeai
